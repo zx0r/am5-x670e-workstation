@@ -1,0 +1,52 @@
+name: Documentation Integrity
+
+'on':
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-docs:
+    name: Validate Document Integrity & Asset References
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Validate Markdown Links, Anchors, and Assets
+        run: |
+          python3 -c "
+          import os, re, sys
+
+          with open('README.md', 'r', encoding='utf-8') as f:
+              readme = f.read()
+
+          toc_match = re.search(r'### Table of Contents(.*?)(?=### 1\.|\Z)', readme, re.DOTALL)
+          if not toc_match:
+              sys.exit('Error: Table of Contents not found in README.md')
+
+          toc_text = toc_match.group(1)
+          toc_links = re.findall(r'\[.*?\]\(#(.*?)\)', toc_text)
+          missing_anchors = [a for a in toc_links if f'<a name=\"{a}\"></a>' not in readme]
+
+          if missing_anchors:
+              print(f'Missing TOC anchors: {missing_anchors}')
+              sys.exit(1)
+
+          # Check relative links
+          rel_links = re.findall(r'\[.*?\]\((?!http|#|mailto:)(.*?)\)', readme)
+          broken_links = [l.split('#')[0] for l in rel_links if not os.path.exists(l.split('#')[0])]
+          if broken_links:
+              print(f'Broken markdown links: {broken_links}')
+              sys.exit(1)
+
+          # Check referenced images
+          img_srcs = re.findall(r'<img[^>]+src=\"([^\"]+)\"', readme)
+          rel_imgs = [src for src in img_srcs if not src.startswith('http')]
+          missing_imgs = [img for img in rel_imgs if not os.path.exists(img)]
+          if missing_imgs:
+              print(f'Missing image assets: {missing_imgs}')
+              sys.exit(1)
+
+          print(f'✓ Successfully validated {len(toc_links)} TOC anchors, {len(rel_links)} links, and {len(rel_imgs)} image assets.')
+          "
